@@ -9,14 +9,12 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      CARGO_INCREMENTAL: 0
-      RUSTC_WRAPPER: "sccache"
-      SCCACHE_DIR: "/tmp/sccache"
-    
+      CARGO_INCREMENTAL: 1
+
     steps:
       # 1. Checkout code
       - uses: actions/checkout@v3
-      
+
       # 2. Cache Rust toolchain
       - name: Cache Rust toolchain
         uses: actions/cache@v3
@@ -24,7 +22,7 @@ jobs:
           path: ~/.rustup
           key: rust-toolchain-1.90.0
           restore-keys: rust-toolchain-
-      
+
       # 3. Install Rust toolchain
       - name: Install Rust
         uses: actions-rs/toolchain@v1
@@ -32,12 +30,8 @@ jobs:
           toolchain: 1.90.0
           profile: minimal
           override: true
-      
-      # 4. Run sccache-cache (handles installation)
-      - name: Install sccache
-        uses: mozilla-actions/sccache-action@v0.0.3
-      
-      # 5. Cache Cargo dependencies
+
+      # 4. Cache Cargo dependencies
       - name: Cache Cargo dependencies
         uses: actions/cache@v3
         with:
@@ -47,8 +41,8 @@ jobs:
             ~/.cargo/git/db/
           key: cargo-deps-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: cargo-deps-
-      
-      # 6. Cache target directory (for incremental builds)
+
+      # 5. Cache target directory (for incremental builds)
       - name: Cache target directory
         uses: actions/cache@v3
         with:
@@ -58,44 +52,26 @@ jobs:
             diesel-target-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}-
             diesel-target-${{ runner.os }}-
       
-      # 7. Create sccache directory
-      - name: Create sccache directory
-        run: mkdir -p /tmp/sccache
-      
-      # 8. Build Diesel only
+      # 6. Build Diesel only
       - name: Build Diesel
         run: |
-          echo "Building Diesel with sccache..."
+          echo "Building Diesel with incremental compilation..."
           cargo build -p diesel -j 2
-          echo "Build complete. sccache stats:"
-          sccache --show-stats
+          echo "Build complete."
       
-      # 9. Upload sccache cache for local use
-      - name: Upload sccache cache
+      # 7. Upload entire target directory
+      - name: Upload target directory
         uses: actions/upload-artifact@v4
         with:
-          name: sccache-diesel-cache
-          path: /tmp/sccache
+          name: diesel-target-directory
+          path: target/
           retention-days: 30
-          compression-level: 9
-      
-      # 10. Upload built artifacts
-      - name: Upload Diesel build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: diesel-build-artifacts
-          path: |
-            target/debug/libdiesel.rlib
-            target/debug/deps/libdiesel-*.rlib
-            target/debug/deps/diesel-*
-            target/debug/.fingerprint/diesel-*
-          retention-days: 30
-      
-      # 11. Show final sccache statistics
-      - name: Show sccache stats
+          compression-level: 6
+
+      # 8. Show build statistics
+      - name: Show build stats
         run: |
-          echo "=== Final sccache statistics ==="
-          sccache --show-stats
-          echo "=== sccache cache size ==="
-          du -sh /tmp/sccache
-          
+          echo "=== Target directory size ==="
+          du -sh target/
+          echo "=== Incremental compilation artifacts ==="
+          du -sh target/debug/incremental/ 2>/dev/null || echo "No incremental artifacts found"
