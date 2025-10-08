@@ -11,16 +11,22 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      RUSTUP_TOOLCHAIN: 1.90.0
       CARGO_INCREMENTAL: 0
-      RUSTC_WRAPPER: sccache
       SCCACHE_MEMORY_CACHE_SIZE: 256  # Limits sccache RAM usage
 
     steps:
       # 1. Checkout code
       - uses: actions/checkout@v3
 
-      # 2. Install Rust toolchain
+      # 2. Cache Rust toolchain
+      - name: Cache Rust toolchain
+        uses: actions/cache@v3
+        with:
+          path: ~/.rustup
+          key: rust-toolchain-1.90.0
+          restore-keys: rust-toolchain-
+
+      # 3. Install Rust toolchain
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
@@ -28,22 +34,38 @@ jobs:
           profile: minimal
           override: true
 
-      # 3. Install sccache
-      - name: Install sccache
-        run: cargo install sccache
+      # 4. Cache sccache installation
+      - name: Cache sccache
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/bin/sccache
+          key: sccache-1.90.0
+          restore-keys: sccache-
 
-      # 4. Set up sccache cache dir
+      # 5. Install sccache if missing
+      - name: Install sccache
+        run: |
+          if [ ! -f ~/.cargo/bin/sccache ]; then
+            cargo install sccache
+          fi
+
+      # 6. Set up sccache wrapper
       - name: Configure sccache
         run: |
           mkdir -p $HOME/.cache/sccache
           export SCCACHE_DIR=$HOME/.cache/sccache
+          export RUSTC_WRAPPER=$(which sccache)
           sccache --show-stats || true
 
-      # 5. Build Diesel only (faster, smaller artifact)
+      # 7. Build Diesel only
       - name: Build Diesel only
         run: cargo build -p diesel -j 2
+        env:
+          RUSTC_WRAPPER: ${{ steps.configure_sccache.outputs.RUSTC_WRAPPER }}
+          CARGO_INCREMENTAL: 0
+          SCCACHE_MEMORY_CACHE_SIZE: 256
 
-      # 6. Upload sccache as artifact (updated to v4)
+      # 8. Upload sccache cache (v4)
       - name: Upload sccache cache
         uses: actions/upload-artifact@v4
         with:
