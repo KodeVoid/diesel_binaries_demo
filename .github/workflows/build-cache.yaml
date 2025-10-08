@@ -1,5 +1,4 @@
 name: Build Diesel Cache
-
 on:
   push:
     branches:
@@ -9,15 +8,15 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     env:
       CARGO_INCREMENTAL: 0
-      SCCACHE_MEMORY_CACHE_SIZE: 256  # Limits sccache RAM usage
-
+      RUSTC_WRAPPER: "sccache"
+      SCCACHE_DIR: "/tmp/sccache"
+    
     steps:
       # 1. Checkout code
       - uses: actions/checkout@v3
-
+      
       # 2. Cache Rust toolchain
       - name: Cache Rust toolchain
         uses: actions/cache@v3
@@ -25,7 +24,7 @@ jobs:
           path: ~/.rustup
           key: rust-toolchain-1.90.0
           restore-keys: rust-toolchain-
-
+      
       # 3. Install Rust toolchain
       - name: Install Rust
         uses: actions-rs/toolchain@v1
@@ -33,41 +32,70 @@ jobs:
           toolchain: 1.90.0
           profile: minimal
           override: true
-
-      # 4. Cache sccache installation
-      - name: Cache sccache
+      
+      # 4. Run sccache-cache (handles installation)
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@v0.0.3
+      
+      # 5. Cache Cargo dependencies
+      - name: Cache Cargo dependencies
         uses: actions/cache@v3
         with:
-          path: ~/.cargo/bin/sccache
-          key: sccache-1.90.0
-          restore-keys: sccache-
-
-      # 5. Install sccache if missing
-      - name: Install sccache
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-deps-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-deps-
+      
+      # 6. Cache target directory (for incremental builds)
+      - name: Cache target directory
+        uses: actions/cache@v3
+        with:
+          path: target
+          key: diesel-target-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}-${{ hashFiles('**/src/**') }}
+          restore-keys: |
+            diesel-target-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}-
+            diesel-target-${{ runner.os }}-
+      
+      # 7. Create sccache directory
+      - name: Create sccache directory
+        run: mkdir -p /tmp/sccache
+      
+      # 8. Build Diesel only
+      - name: Build Diesel
         run: |
-          if [ ! -f ~/.cargo/bin/sccache ]; then
-            cargo install sccache
-          fi
-
-      # 6. Set up sccache wrapper
-      - name: Configure sccache
-        run: |
-          mkdir -p $HOME/.cache/sccache
-          export SCCACHE_DIR=$HOME/.cache/sccache
-          export RUSTC_WRAPPER=$(which sccache)
-          sccache --show-stats || true
-
-      # 7. Build Diesel only
-      - name: Build Diesel only
-        run: cargo build -p diesel -j 2
-        env:
-          RUSTC_WRAPPER: ${{ steps.configure_sccache.outputs.RUSTC_WRAPPER }}
-          CARGO_INCREMENTAL: 0
-          SCCACHE_MEMORY_CACHE_SIZE: 256
-
-      # 8. Upload sccache cache (v4)
+          echo "Building Diesel with sccache..."
+          cargo build -p diesel -j 2
+          echo "Build complete. sccache stats:"
+          sccache --show-stats
+      
+      # 9. Upload sccache cache for local use
       - name: Upload sccache cache
         uses: actions/upload-artifact@v4
         with:
-          name: sccache-diesel
-          path: $HOME/.cache/sccache
+          name: sccache-diesel-cache
+          path: /tmp/sccache
+          retention-days: 30
+          compression-level: 9
+      
+      # 10. Upload built artifacts
+      - name: Upload Diesel build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: diesel-build-artifacts
+          path: |
+            target/debug/libdiesel.rlib
+            target/debug/deps/libdiesel-*.rlib
+            target/debug/deps/diesel-*
+            target/debug/.fingerprint/diesel-*
+          retention-days: 30
+      
+      # 11. Show final sccache statistics
+      - name: Show sccache stats
+        run: |
+          echo "=== Final sccache statistics ==="
+          sccache --show-stats
+          echo "=== sccache cache size ==="
+          du -sh /tmp/sccache
+          
