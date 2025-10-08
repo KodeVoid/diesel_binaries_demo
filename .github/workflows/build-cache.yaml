@@ -1,0 +1,50 @@
+name: Build Diesel Cache
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    env:
+      RUSTUP_TOOLCHAIN: 1.90.0
+      CARGO_INCREMENTAL: 0
+      RUSTC_WRAPPER: sccache
+
+    steps:
+      # 1. Checkout code
+      - uses: actions/checkout@v3
+
+      # 2. Install Rust toolchain
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: 1.90.0
+          profile: minimal
+          override: true
+
+      # 3. Install sccache
+      - name: Install sccache
+        run: cargo install sccache
+
+      # 4. Set up sccache cache dir
+      - name: Configure sccache
+        run: |
+          mkdir -p $HOME/.cache/sccache
+          export SCCACHE_DIR=$HOME/.cache/sccache
+          sccache --show-stats || true
+
+      # 5. Build the project (or just Diesel)
+      - name: Build project
+        run: cargo build  -j 2
+
+      # 6. Upload sccache as artifact
+      - name: Upload sccache cache
+        uses: actions/upload-artifact@v3
+        with:
+          name: sccache-diesel
+          path: $HOME/.cache/sccache

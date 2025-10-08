@@ -1,0 +1,23 @@
+[package]
+name = "diesel_binaries_demo"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+diesel = { version = "=2.2.10", features = ["postgres", "serde_json", "time", "128-column-tables"] }
+async-bb8-diesel = "=0.2.1"
+
+
+[profile.dev]
+opt-level = 0          # minimal optimization for fast compilation
+debug = true           # keep debug info
+split-debuginfo = '...' # optional, depends on OS
+codegen_units = 8      # allow parallel codegen
+incremental = true     # enable incremental compilation
+
+[profile.release]
+opt-level = 2          # moderate optimization, not max (3 is slower to compile)
+debug = false          # no debug info in release
+codegen_units = 8      # parallel codegen
+lto = false            # disable link-time optimization to save CPU
+incremental = false    # optional in release
